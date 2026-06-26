@@ -100,7 +100,7 @@ The tuned model trades some overall accuracy vs the ~80% baseline in exchange fo
 
 ### Live app
 
-**[Telco Churn Predictor](https://churn-predictor-imrepfchefx9j2cksr866g.streamlit.app/)** 
+**[Telco Churn Predictor](https://churn-predictor-rytj2prxn7fguqv888j6rc.streamlit.app/)** 
 
 ### Local setup
 
