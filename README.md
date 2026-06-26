@@ -100,14 +100,14 @@ The tuned model trades some overall accuracy vs the ~80% baseline in exchange fo
 
 ### Live app
 
-**[Telco Churn Predictor](https://YOUR_STREAMLIT_APP_URL.streamlit.app)** *(replace after Streamlit Cloud deploy — see below)*
+**[Telco Churn Predictor](https://churn-predictor-imrepfchefx9j2cksr866g.streamlit.app/)** 
 
 ### Local setup
 
 #### 1. Clone repository
 
 ```bash
-git clone https://github.com/Rudranil-Datta/churn-predictor.git
+git clone https://github.com/Rudranil-Datta/Churn-Predictor.git
 cd churn-predictor
 ```
 
@@ -116,7 +116,7 @@ cd churn-predictor
 ```bash
 python3.10 -m venv .venv
 source .venv/bin/activate          # macOS / Linux
-# .venv\Scripts\activate           # Windows
+.venv\Scripts\activate             # Windows
 ```
 
 #### 3. Install dependencies
@@ -171,14 +171,6 @@ Fill in customer details (city, demographics, services, contract, billing) and c
 | Two-year contract, bank transfer, long tenure | Lower churn probability |
 | Any valid profile | Segment label (budget loyal / high risk new / loyal premium) |
 
-### Deploy to Streamlit Cloud
-
-1. Push to GitHub — include `app.py`, `requirements.txt`, and `models/*.joblib`
-2. Connect repo at [share.streamlit.io](https://share.streamlit.io)
-3. Main file: `app.py` · Python: **3.10**
-4. Copy the public URL into the **Live app** link at the top of this section
-
-> App loads `models/*.joblib` only — no Excel file needed at runtime. Retrain via `Churn.ipynb` if you change the model.
 
 ## Tech stack
 
