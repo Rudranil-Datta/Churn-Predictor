@@ -1,15 +1,16 @@
 # Telco Customer Churn Predictor
 
-Machine learning project that analyzes telecom customer data, predicts churn risk, and segments customers for retention targeting. Includes a Jupyter notebook for exploration and training, plus a Streamlit app for live predictions.
+Machine learning project that analyzes telecom customer data, predicts churn risk, and segments customers for retention targeting. Includes a Jupyter notebook for exploration and training, plus a Streamlit app for live predictions with retention recommendations.
 
 ## Purpose
 
 Help a telecom provider understand **why customers leave** and **which customers are most likely to churn**, so retention teams can act early. The workflow covers:
 
 1. Exploratory analysis of churn drivers
-2. Supervised churn classification with Random Forest
-3. Unsupervised customer segmentation with K-Means
-4. A Streamlit frontend for scoring new customer profiles
+2. Feature engineering and supervised churn classification with Random Forest
+3. Proper hyperparameter tuning with cross-validation (recall-focused)
+4. Unsupervised customer segmentation with K-Means
+5. A Streamlit retention intelligence app
 
 ## Data source
 
@@ -30,6 +31,22 @@ Place the Excel file in the project root before running the notebook or generati
 | `requirements.txt` | Python dependencies |
 | `models/` | Saved artifacts (created by the notebook save cell) |
 
+## Architecture
+
+```text
+Telco_customer_churn.xlsx
+        │
+        ▼
+   Churn.ipynb
+  clean → EDA → feature engineering → train → tune → save
+        │
+        ▼
+models/*.joblib
+        │
+        ▼
+      app.py
+```
+
 ## Pipeline stages
 
 ### 1. Exploratory data analysis
@@ -45,20 +62,33 @@ Place the Excel file in the project root before running the notebook or generati
 
 - Convert `Total Charges` to numeric; fill 11 missing values with `0` (new customers)
 - Drop ID, location, and leaky/post-churn columns (`Churn Label`, `Churn Score`, `CLTV`, `Churn Reason`)
-- One-hot encode categoricals with `pd.get_dummies(drop_first=True)`
-- Split features (`X`) and target (`y` = `Churn Value`)
+- **Drop `City` before encoding** (~1,100 categories removed — high cardinality, weak signal)
 
-### 3. Machine learning — churn prediction
+### 3. Feature engineering
 
-- **80/20 train/test split** (`random_state=42`)
-- **Baseline:** `RandomForestClassifier(n_estimators=100)`
+Engineered features added before one-hot encoding:
+
+| Feature | Definition |
+|---------|------------|
+| `Avg Monthly Spend` | `Total Charges / max(Tenure Months, 1)` |
+| `Internet Add-ons` | Count of active streaming/security services |
+| `Auto Payment` | 1 if bank/card automatic payment, else 0 |
+| `Contract Ordinal` | Month-to-month = 0, one-year = 1, two-year = 2 |
+| `Tenure Bucket` | New (0–12 mo), Mid (13–36), Loyal (37+) |
+
+Then one-hot encode remaining categoricals with `pd.get_dummies(drop_first=True)` → **36 features** total.
+
+### 4. Machine learning — churn prediction
+
+- **Stratified 80/20 train/test split** (`random_state=42`)
+- **Model comparison:** Logistic Regression vs Random Forest vs Gradient Boosting
 - **Class imbalance:** `class_weight='balanced'`
-- **Tuned final model:** `n_estimators=300`, `max_depth=10`, `class_weight='balanced'`
-- Evaluation: accuracy, confusion matrix, classification report, ROC-AUC
-- Optional grid search over tree count and depth; 5-fold cross-validation on the final model
-- Feature importance analysis; low-value features explored
+- **Hyperparameter tuning:** `GridSearchCV` on **train only** (`scoring='recall'`, 5-fold stratified CV) — no test-set leakage
+- **Best model:** `RandomForestClassifier(n_estimators=100, max_depth=8, class_weight='balanced')`
+- **Threshold tuning:** probability cutoff ~**0.567** chosen for ~80% train recall (better for retention than default 0.5)
+- Evaluation: accuracy, recall, precision, F1, ROC-AUC, confusion matrix, feature importance
 
-### 4. Customer segmentation
+### 5. Customer segmentation
 
 - Build segments from tenure, monthly charges, total charges, and model-predicted churn probability
 - Scale features with `StandardScaler`
@@ -68,39 +98,59 @@ Place the Excel file in the project root before running the notebook or generati
   - **High risk new customer**
   - **Loyal premium customer**
 
-### 5. Deployment
+### 6. Deployment
 
 - Final cell in `Churn.ipynb` saves models to `models/`
 - `app.py` loads artifacts and scores customer input from a form
 
 ## Model performance
 
-Metrics below are from the **tuned Random Forest** (`rf_tuned`) on the **held-out 20% test set** (1,409 customers).
+Metrics from the **final Random Forest** on the **held-out 20% test set** (1,409 customers), after feature engineering and `GridSearchCV`.
 
 | Metric | Value |
 |--------|-------|
-| **Accuracy** | **74.2%** |
-| **Recall (churn class)** | **81.2%** |
-| **Precision (churn class)** | 52.9% |
+| **Accuracy** | **76.9%** |
+| **Recall (churn class)** | **77.5%** |
+| **Precision (churn class)** | 54.6% |
 | **F1 (churn class)** | 64.1% |
-| **ROC-AUC** | 0.84 |
+| **ROC-AUC** | 0.853 |
 
-**5-fold cross-validation** (train set only):
+**5-fold cross-validation** (train set, recall scoring):
 
-| Metric | Mean |
-|--------|------|
-| Accuracy | 75.0% |
-| Recall | 81.8% |
+| Metric | Value |
+|--------|-------|
+| CV recall | 78.6% |
+| Best params | `n_estimators=100`, `max_depth=8` |
 
-The tuned model trades some overall accuracy vs the ~80% baseline in exchange for **much higher churn recall** (81% vs ~53% baseline), which is better for catching customers who might leave.
+The model is tuned to **prioritize catching churners** (high recall) over overall accuracy. Precision is lower because false alarms are acceptable when the cost of missing a churner is higher.
 
-> The deployed model in `app.py` is refit on **all** data before saving, so live predictions use the full dataset; test metrics above reflect generalization on unseen data during development.
+> The deployed model in `app.py` is refit on **all** data before saving. Test metrics above reflect generalization on unseen data during development.
+
+## Streamlit app
+
+| Feature | Description |
+|---------|-------------|
+| **Predict tab** | Customer form → churn probability, risk band, segment, top drivers, retention action |
+| **About model tab** | ML methodology, engineered features, global feature importance chart |
+| **Sidebar** | Model metrics snapshot + quick profile presets |
+| **Risk bands** | Low / Medium / High based on tuned threshold (~56.7%) |
+| **Presets** | At-risk new customer, Loyal long-term, High-spend fiber |
+
+### Preset smoke test
+
+| Preset | Churn probability | Risk band |
+|--------|-------------------|-----------|
+| At-risk new customer | ~63% | High |
+| High-spend fiber | ~52% | Medium |
+| Loyal long-term | ~19% | Low |
 
 ## Setup
 
 ### Live app
 
-**[Telco Churn Predictor](https://churn-predictor-rytj2prxn7fguqv888j6rc.streamlit.app/)** 
+**[Telco Churn Predictor](https://churn-predictor-rytj2prxn7fguqv888j6rc.streamlit.app/)**
+
+> App loads `models/*.joblib` only — no Excel file needed at runtime. Retrain via `Churn.ipynb` if you change the model.
 
 ### Local setup
 
@@ -108,7 +158,7 @@ The tuned model trades some overall accuracy vs the ~80% baseline in exchange fo
 
 ```bash
 git clone https://github.com/Rudranil-Datta/Churn-Predictor.git
-cd churn-predictor
+cd Churn-Predictor
 ```
 
 #### 2. Create virtual environment
@@ -116,7 +166,7 @@ cd churn-predictor
 ```bash
 python3.10 -m venv .venv
 source .venv/bin/activate          # macOS / Linux
-.venv\Scripts\activate             # Windows
+# .venv\Scripts\activate           # Windows
 ```
 
 #### 3. Install dependencies
@@ -141,14 +191,16 @@ Select your virtualenv kernel → run all cells through training → run the fin
 Expected output:
 
 ```text
-Saved to models/: churn_model, feature_columns, cities, scaler, kmeans, cluster_names
+Saved models with best params: {'max_depth': 8, 'n_estimators': 100}
+Churn threshold: 0.567
 ```
 
 This writes:
 
 - `models/churn_model.joblib`
 - `models/feature_columns.joblib`
-- `models/cities.joblib`
+- `models/churn_threshold.joblib`
+- `models/feature_importance.joblib`
 - `models/scaler.joblib`
 - `models/kmeans.joblib`
 - `models/cluster_names.joblib`
@@ -161,21 +213,13 @@ streamlit run app.py
 
 Open [http://localhost:8501](http://localhost:8501)
 
-Fill in customer details (city, demographics, services, contract, billing) and click **Predict churn** to get churn probability, a churn/stay label, and a customer segment.
-
-#### Smoke test
-
-| Input | Expected |
-|-------|----------|
-| Month-to-month contract, electronic check, short tenure, fiber internet | Higher churn probability |
-| Two-year contract, bank transfer, long tenure | Lower churn probability |
-| Any valid profile | Segment label (budget loyal / high risk new / loyal premium) |
+Fill in customer details (demographics, services, contract, billing) and click **Predict churn** to get churn probability, risk band, segment, drivers, and a recommended retention action.
 
 
 ## Tech stack
 
-- Python, pandas, NumPy
-- scikit-learn (Random Forest, K-Means, StandardScaler)
+- Python 3.10, pandas, NumPy
+- scikit-learn (Random Forest, GridSearchCV, K-Means, StandardScaler)
 - matplotlib, seaborn (EDA in notebook)
 - Streamlit (frontend)
 - joblib (model persistence)
